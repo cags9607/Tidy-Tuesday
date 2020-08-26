@@ -72,7 +72,7 @@ chopped %>%
        title = "Chopped rating across seasons",
        subtitle = "The size of the dots represents the number of episodes within the season (ranging from 1 to 19)",
        caption = "Data from <b>'Chopped: 10+ Years of Episode Data' </b>(kaggle.com/jeffreybraun/chopped-10-years-of-episode-data)<br>
-       Code found at <b>github.com/jack-davison</b>")+
+       Code found at <b>github.com/cags9607</b>")+
   ggthemes::theme_clean()+
   theme(
     rect = element_rect(fill = "#373F51"),
