@@ -1,0 +1,137 @@
+---
+title: "Yield-Shiny"
+author: "Sergio Carrasco"
+date: "1/9/2020"
+output: html_notebook
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+```
+
+```{r}
+library(tidyverse)
+library(plotly)
+library(ggrepel)
+
+crop_yields = readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/key_crop_yields.csv') %>% 
+  rename_with(~str_replace(., fixed(" (tonnes per hectare)"),""),4:14) %>% 
+  rename_with(str_to_lower, everything()) %>% 
+  rename(cocoa_beans = 'cocoa beans') %>% 
+  mutate(code = str_to_lower(code))
+
+
+crops_names = colnames(crop_yields[,4:ncol(crop_yields)])
+crops_names[10] = "cocoa beans"
+```
+
+
+```{r}
+plot_crop = function(tbl, crops){
+  g = tbl %>%
+    rename("cocoa beans" = cocoa_beans) %>% 
+    group_by(entity, year) %>% 
+    summarize(across(where(is.numeric),~mean(., na.rm = T))) %>% 
+    pivot_longer(crops, names_to = "Crop", values_to = "Yield") %>% 
+    ggplot(aes(year, Yield))+
+    geom_line(aes(color=Crop))+
+    facet_wrap(~entity, scale = "free")+
+    labs(x = "Year", y = "Yield (tonnes per hectaree)")+
+    theme_light()+
+    theme(axis.text.x = element_text(angle = 45))
+    
+  ggplotly(g)
+}
+```
+
+## World Crop Yields
+
+```{r, fig.width=15,fig.height=5}
+inputPanel(
+  selectInput("entity", label = "Entity",
+              choices = unique(crop_yields$entity),
+              selected = "World",
+              multiple = T),
+  selectInput("crops", label = "Type of crop",
+              choices = crops_names,
+              selected = "bananas",
+              multiple = T)
+  
+)
+
+
+renderPlotly({
+  crop_yields %>% 
+    filter(entity %in% input$entity) %>% 
+    plot_crop(input$crops)
+  
+})
+```
+
+
+
+```{r}
+library(tidymodels)
+library(tidytext)
+
+linear_models =  crop_yields %>%
+  filter(!is.na(code), entity != "World") %>% # to filter out regions and continents
+  group_by(year) %>% 
+  rename("cocoa beans" = cocoa_beans) %>% 
+  pivot_longer(c(-year, -entity, -code), names_to = "crop", values_to = "tph") %>% 
+  select(entity, year, crop, tph) %>% 
+  filter(!is.na(tph)) %>% 
+  nest(tph = c(year, tph)) %>%
+  mutate(model = map(tph, ~ lm(tph ~ year, data = .x))) %>% 
+  mutate(coefs = map(model, tidy)) %>%
+  unnest(coefs) %>%
+  filter(term == "year") %>%
+  mutate(p.value = p.adjust(p.value))
+
+plot_lm = function(tbl){
+  g2 = tbl %>% 
+  ggplot(aes(estimate, reorder_within(entity, estimate, crop))) +
+  geom_col(aes(fill = ifelse(p.value<0.05,"Yes","No")))+
+  facet_wrap(~crop, scales = "free")+
+  scale_y_reordered()+
+  theme_light() +
+  theme(strip.text = element_text(size = 12)) +
+  labs(x = "Increase in tons per hectare per year",
+       title = "Estimated increase (linear model)",
+       y = "",
+       fill = "Is the estimate statistically significant?")+
+    scale_fill_manual(values = c("darkgray","darkblue"))
+
+  g2
+}
+
+list_entities = 
+  crop_yields %>% 
+  filter(!is.na(code),entity!="World") %>% 
+  pull(entity) %>% unique()
+            
+```
+
+## Increase in yield per year
+
+```{r}
+inputPanel(
+  selectInput("entity2", label = "Entity",
+              choices = list_entities,
+              selected = c("Mexico","Brazil","Argentina"),
+              multiple = T),
+  selectInput("crops2", label = "Type of crop",
+              choices = crops_names,
+              selected = c("potatoes","bananas","rice"),
+              multiple = T)
+  
+)
+
+renderPlot({
+    linear_models %>% 
+    filter(entity %in% input$entity2, crop %in% input$crops2) %>% 
+    plot_lm()
+})
+```
+
