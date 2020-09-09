@@ -1,61 +1,70 @@
+library(ggwordcloud)
+library(ggtext)
 library(tidyverse)
 library(tidytext)
 library(tidylo)
-library(cowplot)
-library(ggtext)
 
-friends_emotions = readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-08/friends_emotions.csv')
-friends_info = readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-08/friends_info.csv')
+# If you don't have the font:
+#library(showtext)
+#showtext_auto()
+#font_add(family = "friends", regular = "GABRWFFR.TTF")
 
-my_theme = theme(
-  title = element_text(color = "white", size = 17),
-  rect = element_rect(fill = "#333333"),
-  panel.background = element_rect(fill = "darkorchid2"),
-  strip.background = element_rect(fill = "#9912FF"),
-  strip.text = element_text(color = "white", size = 17),
-  axis.text = element_text(color = "white", size = 12), 
-  legend.text = element_text(color = "white"),
-  plot.subtitle = element_markdown(),
-  plot.caption = element_text(size = 10, color = "gray80")
-  )
+friends = readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-08/friends.csv')
 
-p1 = friends_emotions %>% 
-  mutate(season = paste("Season", season)) %>% 
-  count(emotion, season, sort = T) %>% 
-  bind_log_odds(emotion, season, n) %>% 
+friends %>% 
+  filter(speaker %in% c("Rachel Green","Ross Geller","Chandler Bing",
+                        "Monica Geller","Joey Tribbiani","Phoebe Buffay")) %>% 
+  unnest_tokens(word, text) %>% 
+  anti_join(stop_words) %>% 
+  count(speaker, word) %>% 
+  filter(n>100) %>% 
+  bind_log_odds(speaker, word, n) %>%
+  mutate(sign = ifelse(log_odds_weighted<0, "Neg","Pos")) %>% 
   arrange(-log_odds_weighted) %>% 
-  mutate(emotion = reorder_within(emotion, abs(log_odds_weighted), season)) %>% 
-  ggplot(aes(abs(log_odds_weighted), emotion))+
-  geom_col(aes(fill = ifelse(log_odds_weighted<0,"Neg","Pos")),
-           show.legend = F,
-           alpha = 0.95)+
-  geom_vline(xintercept = qnorm(0.975),
-             linetype = "dashed", 
-             size = 1.7, 
-             color = "firebrick1",
-             alpha = 0.5)+
-  scale_y_reordered()+
-  scale_fill_manual(values = c("firebrick","forestgreen"))+
-  facet_wrap(~season, scales = "free_y", ncol= 4)+
-  my_theme+
-  labs(x = "Absolute value of log odds ratio (z-scores), weighted by uninformative Dirichlet prior",
-       title = "How the utterance emotions evolved for the first 4 seasons of the TV comedy show Friends?",
-       subtitle = "<span style = 'color:forestgreen;'>Neutral</span> utterances were <span style = 'color:forestgreen;'>positively associated </span> with the first season, with<span style = 'color:firebrick;'> peaceful </span>and <span style = 'color:firebrick;'> powerful </span> utterances <br> being <span style = 'color:firebrick;'>negatively associated</span>.<br> This pattern reverted for the 4th season, where utterances were <span style = 'color:forestgreen;'>powerful</span> and <span style = 'color:forestgreen;'>peaceful</span> with a lack of <span style = 'color:firebrick;'>neutral</span> utterances.",
-       y = "",
-       caption = "The dashed line shows the usual threshold (1.959...) for significance of standardized z-scores for a two-tailed test")
 
-p2 = friends_info %>% 
-  filter(season %in% 1:4) %>%
-  group_by(season) %>% 
-  summarize(imdb_rating = mean(imdb_rating),
-            total_views = sum(us_views_millions)) %>% 
-  ggplot(aes(season, imdb_rating))+
-  geom_point(size = 6, color = "darkblue", alpha = 0.9)+
-  geom_line(color = "firebrick", size = 1.3)+
-  scale_x_continuous(labels = function(x) paste("Season",x))+
-  my_theme+
-  labs(x = "", y = "IMDb rating",
-       caption = "Code found at: https://github.com/cags9607 \n Data source: https://github.com/EmilHvitfeldt/friends",
-       subtitle = "IMDb rating had its lowest value on the most neutral season (1st), while the highest rating was achieved on the most powerful season (4th).")
-
-plot_grid(p1,p2, nrow = 2)
+ggplot(aes(
+         label = word,
+         size = abs(log_odds_weighted),
+         color = sign,
+         alpha = abs(log_odds_weighted)
+       )) +
+  geom_text_wordcloud_area(area_corr_power = 1, show.legend = F) +
+  facet_wrap(~speaker)+
+  scale_radius(range = c(3, 20)) +
+  theme_void() +
+  scale_color_manual(values = c("firebrick1", "skyblue"))+ 
+  scale_alpha(range = c(.5, 1))+
+  theme(
+    plot.background = element_rect(fill = "#393536ff", color = NA),
+    strip.text = element_text(
+      family = "friends",
+      size = 20,
+      color = "white"
+    )
+,
+    plot.margin = unit(rep(1, 4), "cm"),
+    panel.spacing = unit(.5, "cm"),
+    plot.title = element_text(
+      family = "friends",
+      size = 20,
+      color = "#f4c93cff",
+      hjust = .5,
+      vjust = .5
+    )
+,
+    plot.subtitle = element_markdown(
+      hjust = .5,
+      color = "white",
+      size = 10
+    )
+,
+    plot.caption = element_markdown(
+      hjust = .5,
+      vjust = .5,
+      color = "gray80"
+    )
+  ) +
+  labs(title = "Friends (most iconic words by character)",
+       subtitle = "<span style='color:skyblue'>Blue</span> words are more likely to be spoken by the character, while <span style='color:firebrick1'>red</span> words are less likely.<br> (The size and transparency are proportional to the absolute value of the log odds ratio weighted by uninformative Dirichlet prior, and the color is based on the sign)<br>",
+       caption = "Code found at: github.com/cags9607 <br> Data source: github.com/EmilHvitfeldt/friends"
+       )
